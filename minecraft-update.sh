@@ -68,8 +68,8 @@ update_server() {
     fi
 
     # ViaVersion
-    html=$(curl -s 'https://hangar.papermc.io/ViaVersion/ViaVersion/versions')
-    latest=$(echo "$html" | grep -oP 'Release\s*\K[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    html=$(curl -s 'https://hangar.papermc.io/ViaVersion/ViaVersion/versions?channel=Release&platform=PAPER')
+    latest=$(echo "$html" | grep -oP 'ViaVersion/ViaVersion/versions/\K[0-9]+\.[0-9]+\.[0-9]+' | sort -Vr | head -n 1)
     VIAVERSION_JAR="$PLUGINS_DIR/ViaVersion.jar"
     backup_file "$VIAVERSION_JAR"
     url="https://hangarcdn.papermc.io/plugins/ViaVersion/ViaVersion/versions/${latest}/PAPER/ViaVersion-${latest}.jar"
@@ -83,8 +83,8 @@ update_server() {
     fi
 
     # ViaBackwards
-    html=$(curl -s 'https://hangar.papermc.io/ViaVersion/ViaBackwards/versions')
-    latest=$(echo "$html" | grep -oP 'Release\s*\K[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    html=$(curl -s 'https://hangar.papermc.io/ViaVersion/ViaBackwards/versions?channel=Release&platform=PAPER')
+    latest=$(echo "$html" | grep -oP 'ViaVersion/ViaBackwards/versions/\K[0-9]+\.[0-9]+\.[0-9]+' | sort -Vr | head -n 1)
     VIABACKWARDS_JAR="$PLUGINS_DIR/ViaBackwards.jar"
     backup_file "$VIABACKWARDS_JAR"
     url="https://hangarcdn.papermc.io/plugins/ViaVersion/ViaBackwards/versions/${latest}/PAPER/ViaBackwards-${latest}.jar"
@@ -108,9 +108,19 @@ update_server() {
         log "Restarting $SERVER_NAME container"
     else
         log "Not restarting container due to failures"
+        /usr/local/emhttp/webGui/scripts/notify \
+            -e "Minecraft Update Failed" \
+            -s "Update failed for $SERVER_NAME." \
+            -d "Update failed for $SERVER_NAME. Please check the logs." \
+            -i "alert"
     fi
 
     log "Update complete for $SERVER_NAME."
+    /usr/local/emhttp/webGui/scripts/notify \
+        -e "Minecraft Update" \
+        -s "Update complete for $SERVER_NAME." \
+        -d "The Minecraft server $SERVER_NAME has been updated successfully." \
+        -i "normal"
 }
 
 # List of servers to update
