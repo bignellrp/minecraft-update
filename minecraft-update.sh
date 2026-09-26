@@ -30,8 +30,9 @@ update_server() {
         fi
     }
 
-    # PaperMC
-    PAPER_API="https://api.papermc.io/v2/projects/paper"
+    # PaperMC (v3 API)
+    PAPER_API="https://fill.papermc.io/v3/projects/paper"
+    # Get the latest version from the v3 endpoint
     PAPER_VERSION=$(curl -s "$PAPER_API" | jq -r '.versions[-1]')
     PAPER_BUILD=$(curl -s "$PAPER_API/versions/$PAPER_VERSION" | jq -r '.builds[-1]')
     PAPER_JAR_URL="$PAPER_API/versions/$PAPER_VERSION/builds/$PAPER_BUILD/downloads/paper-$PAPER_VERSION-$PAPER_BUILD.jar"
@@ -124,6 +125,6 @@ update_server() {
 }
 
 # List of servers to update
-for SERVER in binhex-minecraftserver binhex-minecraftserver2 binhex-minecraftserver3 binhex-minecraftserver4; do
+for SERVER in binhex-minecraftserver binhex-minecraftserver2; do
     update_server "$SERVER"
 done
