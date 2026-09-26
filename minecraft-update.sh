@@ -31,19 +31,34 @@ update_server() {
     }
 
     # PaperMC (v3 API)
+    # In v3, .versions is an object keyed by minor version, each mapping to an
+    # array of full version strings (newest first). Walk them newest-first and
+    # pick the first version whose latest build is on the STABLE channel, then
+    # use the download URL the API hands back.
     PAPER_API="https://fill.papermc.io/v3/projects/paper"
-    # Get the latest version from the v3 endpoint
-    PAPER_VERSION=$(curl -s "$PAPER_API" | jq -r '.versions[-1]')
-    PAPER_BUILD=$(curl -s "$PAPER_API/versions/$PAPER_VERSION" | jq -r '.builds[-1]')
-    PAPER_JAR_URL="$PAPER_API/versions/$PAPER_VERSION/builds/$PAPER_BUILD/downloads/paper-$PAPER_VERSION-$PAPER_BUILD.jar"
+    PAPER_VERSION=""
+    PAPER_JAR_URL=""
+    for candidate in $(curl -s "$PAPER_API" | jq -r '[.versions[][]] | .[]'); do
+        build_json=$(curl -s "$PAPER_API/versions/$candidate/builds/latest")
+        if [ "$(echo "$build_json" | jq -r '.channel')" = "STABLE" ]; then
+            PAPER_VERSION="$candidate"
+            PAPER_JAR_URL=$(echo "$build_json" | jq -r '.downloads."server:default".url')
+            break
+        fi
+    done
     PAPER_JAR="$MC_DIR/paper_server.jar"
-    backup_file "$PAPER_JAR"
-    curl -sL "$PAPER_JAR_URL" -o "$PAPER_JAR"
-    if [ $? -eq 0 ]; then
-        log "Downloaded latest PaperMC to $PAPER_JAR"
-    else
-        log "Failed to download PaperMC"
+    if [ -z "$PAPER_JAR_URL" ] || [ "$PAPER_JAR_URL" = "null" ]; then
+        log "Failed to resolve latest stable PaperMC build from API"
         FAILED=1
+    else
+        log "Downloading PaperMC $PAPER_VERSION from $PAPER_JAR_URL..."
+        backup_file "$PAPER_JAR"
+        if curl -fsSL "$PAPER_JAR_URL" -o "$PAPER_JAR"; then
+            log "Downloaded latest PaperMC to $PAPER_JAR"
+        else
+            log "Failed to download PaperMC"
+            FAILED=1
+        fi
     fi
 
     # Geyser
