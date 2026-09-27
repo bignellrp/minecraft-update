@@ -184,45 +184,62 @@ update_server() {
     download_if_new "ViaBackwards" "$VIABACKWARDS_JAR" "$latest" \
         "https://hangarcdn.papermc.io/plugins/ViaVersion/ViaBackwards/versions/${latest}/PAPER/ViaBackwards-${latest}.jar"
 
-    # DirectionHUD (Hangar API, "other" namespace)
-    # The Hangar API returns the latest Release version and a ready-to-use
-    # download URL for the PAPER platform, so we use those directly. Versions
-    # look like "1.8.1.2+1.21.7"; download_if_newer compares them so we only
-    # fetch a strictly newer release (and always download on first install).
-    DIRECTIONHUD_API="https://hangar.papermc.io/api/v1/projects/other/DirectionHUD/versions?channel=Release&limit=1"
-    dh_json=$(curl -s "$DIRECTIONHUD_API")
-    DIRECTIONHUD_VER=$(echo "$dh_json" | jq -r '.result[0].name' 2>/dev/null)
-    DIRECTIONHUD_URL=$(echo "$dh_json" | jq -r '.result[0].downloads.PAPER.downloadUrl' 2>/dev/null)
+    # DirectionHUD (Modrinth API)
+    # Modrinth carries builds that declare support for the current Paper line
+    # (e.g. "1.8.4.0+26.2"), unlike the Hangar listing. Pick the newest release
+    # whose game_versions include this server's Minecraft major version, and
+    # skip (not an error) if none matches so we never install an unsupported build.
+    # Note: Modrinth embeds raw changelog text (with control characters) in the
+    # version JSON, which breaks `jq` if the payload is round-tripped through a
+    # shell variable. Pipe curl straight into jq to avoid that corruption.
     DIRECTIONHUD_JAR="$PLUGINS_DIR/DirectionHUD.jar"
-    if [ -z "$DIRECTIONHUD_URL" ] || [ "$DIRECTIONHUD_URL" = "null" ]; then
-        plog "Failed to resolve latest DirectionHUD download from API"
-        FAILED=1
-    else
-        download_if_newer "DirectionHUD" "$DIRECTIONHUD_JAR" "$DIRECTIONHUD_VER" "$DIRECTIONHUD_URL"
-    fi
-
-    # NickNamer+ (Modrinth API)
-    # Only install/update if a Release version declares support for this
-    # server's Minecraft major version ($MC_MAJOR). Modrinth exposes per-version
-    # game_versions and a direct file URL, so we pick the newest compatible one.
-    # If nothing lists the server version, we skip (not an error) so we never
-    # install a build that isn't declared compatible.
-    NICKNAMER_JAR="$PLUGINS_DIR/NickNamerPlus.jar"
-    nn_json=$(curl -s "https://api.modrinth.com/v2/project/nicknamer%2B/version?loaders=%5B%22paper%22%5D")
-    # Newest version (by version_number) whose game_versions include MC_MAJOR.x
-    nn_match=$(echo "$nn_json" | jq -r --arg maj "$MC_MAJOR" '
+    DIRECTIONHUD_API="https://api.modrinth.com/v2/project/directionhud/version?loaders=%5B%22paper%22%5D"
+    dh_match=$(curl -s "$DIRECTIONHUD_API" | jq -r --arg maj "$MC_MAJOR" '
         [ .[] | select(any(.game_versions[]; startswith($maj + "."))) ]
         | sort_by(.date_published) | last // empty
         | "\(.version_number)\t\(.files[0].url)"' 2>/dev/null)
     if [ -z "$MC_MAJOR" ]; then
-        plog "Skipping NickNamer+: could not determine server Minecraft version"
-    elif [ -z "$nn_match" ]; then
-        NN_SUPPORTED=$(echo "$nn_json" | jq -r '[.[].game_versions[]] | unique | join(", ")' 2>/dev/null)
-        plog "Skipping NickNamer+: no release declares support for Minecraft ${MC_MAJOR}.x (supports: ${NN_SUPPORTED})"
+        plog "Skipping DirectionHUD: could not determine server Minecraft version"
+    elif [ -z "$dh_match" ]; then
+        DH_SUPPORTED=$(curl -s "$DIRECTIONHUD_API" | jq -r '[.[].game_versions[]] | unique | join(", ")' 2>/dev/null)
+        plog "Skipping DirectionHUD: no release declares support for Minecraft ${MC_MAJOR}.x (supports: ${DH_SUPPORTED})"
     else
-        NICKNAMER_VER=$(echo "$nn_match" | cut -f1)
-        NICKNAMER_URL=$(echo "$nn_match" | cut -f2)
-        download_if_newer "NickNamer+" "$NICKNAMER_JAR" "$NICKNAMER_VER" "$NICKNAMER_URL"
+        DIRECTIONHUD_VER=$(echo "$dh_match" | cut -f1)
+        DIRECTIONHUD_URL=$(echo "$dh_match" | cut -f2)
+        download_if_newer "DirectionHUD" "$DIRECTIONHUD_JAR" "$DIRECTIONHUD_VER" "$DIRECTIONHUD_URL"
+    fi
+
+    # Remove the old NickNamer+ plugin if it was previously installed. Nametags
+    # (below) replaces it, so back up then delete the old jar and its marker.
+    OLD_NICKNAMER_JAR="$PLUGINS_DIR/NickNamerPlus.jar"
+    if [ -f "$OLD_NICKNAMER_JAR" ]; then
+        backup_file "$OLD_NICKNAMER_JAR"
+        rm -f "$OLD_NICKNAMER_JAR" "$OLD_NICKNAMER_JAR.version"
+        plog "Removed old NickNamer+ plugin (replaced by Nametags)"
+        CHANGED=1
+    fi
+
+    # Nametags (Modrinth API)
+    # Only install/update if a release declares support for this server's
+    # Minecraft major version ($MC_MAJOR); skip (not an error) otherwise so we
+    # never install an unsupported build. Pipe curl straight into jq because
+    # Modrinth changelog text contains control characters that corrupt the JSON
+    # if round-tripped through a shell variable.
+    NAMETAGS_JAR="$PLUGINS_DIR/Nametags.jar"
+    NAMETAGS_API="https://api.modrinth.com/v2/project/nametags/version?loaders=%5B%22paper%22%5D"
+    nametags_match=$(curl -s "$NAMETAGS_API" | jq -r --arg maj "$MC_MAJOR" '
+        [ .[] | select(any(.game_versions[]; startswith($maj + "."))) ]
+        | sort_by(.date_published) | last // empty
+        | "\(.version_number)\t\(.files[0].url)"' 2>/dev/null)
+    if [ -z "$MC_MAJOR" ]; then
+        plog "Skipping Nametags: could not determine server Minecraft version"
+    elif [ -z "$nametags_match" ]; then
+        NAMETAGS_SUPPORTED=$(curl -s "$NAMETAGS_API" | jq -r '[.[].game_versions[]] | unique | join(", ")' 2>/dev/null)
+        plog "Skipping Nametags: no release declares support for Minecraft ${MC_MAJOR}.x (supports: ${NAMETAGS_SUPPORTED})"
+    else
+        NAMETAGS_VER=$(echo "$nametags_match" | cut -f1)
+        NAMETAGS_URL=$(echo "$nametags_match" | cut -f2)
+        download_if_newer "Nametags" "$NAMETAGS_JAR" "$NAMETAGS_VER" "$NAMETAGS_URL"
     fi
 
     chown "$CHOWN_NAME" "$MC_DIR"/*.jar "$PLUGINS_DIR"/*.jar
