@@ -184,7 +184,29 @@ update_server() {
     download_if_new "ViaBackwards" "$VIABACKWARDS_JAR" "$latest" \
         "https://hangarcdn.papermc.io/plugins/ViaVersion/ViaBackwards/versions/${latest}/PAPER/ViaBackwards-${latest}.jar"
 
-    # DirectionHUD (Modrinth API)
+    # OtterLib (Modrinth API) - required dependency for recent DirectionHUD.
+    # Installed before DirectionHUD so the library is present first. OtterLib's
+    # 26.x builds are published as beta, so we do not filter by channel here;
+    # we take the newest version that declares support for this server's MC
+    # major version. Skip (not an error) if none matches.
+    OTTERLIB_JAR="$PLUGINS_DIR/OtterLib.jar"
+    OTTERLIB_API="https://api.modrinth.com/v2/project/otterlib/version?loaders=%5B%22paper%22%5D"
+    otterlib_match=$(curl -s "$OTTERLIB_API" | jq -r --arg maj "$MC_MAJOR" '
+        [ .[] | select(any(.game_versions[]; startswith($maj + "."))) ]
+        | sort_by(.date_published) | last // empty
+        | "\(.version_number)\t\(.files[0].url)"' 2>/dev/null)
+    if [ -z "$MC_MAJOR" ]; then
+        plog "Skipping OtterLib: could not determine server Minecraft version"
+    elif [ -z "$otterlib_match" ]; then
+        OTTERLIB_SUPPORTED=$(curl -s "$OTTERLIB_API" | jq -r '[.[].game_versions[]] | unique | join(", ")' 2>/dev/null)
+        plog "Skipping OtterLib: no version declares support for Minecraft ${MC_MAJOR}.x (supports: ${OTTERLIB_SUPPORTED})"
+    else
+        OTTERLIB_VER=$(echo "$otterlib_match" | cut -f1)
+        OTTERLIB_URL=$(echo "$otterlib_match" | cut -f2)
+        download_if_newer "OtterLib" "$OTTERLIB_JAR" "$OTTERLIB_VER" "$OTTERLIB_URL"
+    fi
+
+    # DirectionHUD (Modrinth API) - requires OtterLib (installed above).
     # Modrinth carries builds that declare support for the current Paper line
     # (e.g. "1.8.4.0+26.2"), unlike the Hangar listing. Pick the newest release
     # whose game_versions include this server's Minecraft major version, and
